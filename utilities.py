@@ -15,7 +15,7 @@ import matplotlib.lines as mlines
 #import xlwings as xw
 import matplotlib.pylab as pylab
 from scipy import spatial, integrate
-params = {'legend.fontsize': 'x-large',
+params = {'legend.fontsize': 'medium',
           'figure.figsize': (6,6),
           'figure.dpi': 200,
          'axes.labelsize': 'x-large',
@@ -175,7 +175,22 @@ def Req_Surcharge_Consol_U(surcharge,Po,Pf,Pc, H, duration = False,
             plt.plot(Tv_final,Uv_final, color='green', linestyle='dashed', marker='o',markerfacecolor='red', markersize=15)
         if verbose:
             print('For settlement duration of {0} years, expected Uv = {1}%'.format(duration,np.around(Uv,3)*100))
-        return Uv, Uv_list
+            
+        if verbose:
+            print('Applying {}kPa surcharge\n'.format(surcharge))
+            print('Calculating design settlement...')
+        S_design = Ult_Settlement(Po,Pf,Pc, H,e0 = e0, Cc = Cc,Cr = Cr, verbose = verbose)
+        if verbose:
+            print('Calculating ultimate settlement WITH surcharge...')
+        S_surcharge = Ult_Settlement(Po,Pf + surcharge,Pc, H,e0 = e0, Cc = Cc,Cr = Cr, verbose = verbose)
+        
+        Uv_ult = S_design/S_surcharge #given surcharge required to reach this level of consol
+        if verbose:
+            print('\nUnder {0}kPa surcharge, required degree of consolidation is {1}%'.format(surcharge,np.around(Uv*100,1)))
+            print('Using Terzaghi avg degree of consol chart to find Tv')
+        idx = find_nearest(Uv_range,Uv_ult)
+        No_PVD_Tv_list, No_PVD_Uv_list = Tv_range[0:idx],Uv_range[0:idx]
+        return (Uv, Uv_list, No_PVD_Tv_list, No_PVD_Uv_list)
       
     else:
         if verbose:
@@ -238,29 +253,43 @@ def PVD_equiv_dim(length,width):
 def PVD_given_duration(length,width,spacing,surcharge,Po,Pf,Pc,H,duration = False, 
                        pattern = 'triangular',smear = 0.8,e0 = 2, 
                        Cc = 0.6,Cr = 0.06, cv = 0.5, ch = 1.5, double_drain = True, add = 0.5,
-                       graph = True, Uv_graph = False, Uh_graph = False, Uv_verbose = True, Uh_verbose = True):
+                       graph = True, axis = False, new = True, main_color = 'k', legend = True,
+                       Uv_graph = False, Uh_graph = False, 
+                       Uv_verbose = True, Uh_verbose = True):
     print('PVD length = {0}m, PVD width = {1}m'.format(length,width))
     print('PVD spacing = {0}m based on {1} pattern'.format(spacing,pattern))
     print('Po = {0}kPa, Pf = {1}kPa, Pc = {2}kPa, H = {3}m'.format(Po,Pf,Pc,H))
     print('Surcharge = {0}kPa applied for {1} years\n'.format(surcharge,duration))
     d_equiv = PVD_equiv_dim(length, width)*smear
+
     if Uh_verbose:
         print('Calculated d_equiv = {0}mm with included smearing effect factor = {1}'.format(np.around(d_equiv*1000,3),smear))
 
-    #Calc design settlement
+    #Calc design settlement & No PVD & no surcharge settlement
     S_design = Ult_Settlement(Po, Pf, Pc, H,e0 = e0, Cc = Cc, Cr = Cr, verbose = False)
+    
     if Uv_verbose or Uh_verbose:    
         print('Design settlement is {}m'.format(np.around(S_design,3)))
         
     #Calc Uv
-    Uv, Uv_list = Req_Surcharge_Consol_U(surcharge, Po, Pf, Pc, H, duration = duration,
-                                         e0 = e0, Cc = Cc,Cr = Cr, double_drain = double_drain, 
-                                         graph = Uv_graph, title = ' - Surcharge', verbose = False)
+    No_PVD_Consol_info = Req_Surcharge_Consol_U(surcharge, Po, Pf, Pc, H, duration = duration,
+                                                e0 = e0, Cc = Cc,Cr = Cr, double_drain = double_drain, 
+                                                graph = Uv_graph, title = ' - Surcharge', verbose = False)
+    Uv = No_PVD_Consol_info[0]
+    Uv_list = No_PVD_Consol_info[1]
     S_surcharge = Ult_Settlement(Po,Pf + surcharge,Pc, H,e0 = e0, Cc = Cc,Cr = Cr, verbose = False)
     if Uv_verbose: 
         print('\nUv_settlement calculation...')
         print('For duration of {0} years, Uv = {1}%'.format(duration,np.around(Uv,3)*100))
     
+    #Obtaining vanilla settlement-time
+    if surcharge > 0:
+        No_PVD_sur_Consol_info = Req_Surcharge_Consol_U(0, Po, Pf, Pc, H, duration = duration,
+                                                        e0 = e0, Cc = Cc,Cr = Cr, double_drain = double_drain, 
+                                                        graph = Uv_graph, title = ' - Surcharge', verbose = False)
+    elif surcharge == 0:
+        No_PVD_sur_Consol_info = No_PVD_Consol_info
+        
     #Calc Uh
     if pattern == 'triangular':
         cell_D = 1.05*spacing
@@ -327,11 +356,14 @@ def PVD_given_duration(length,width,spacing,surcharge,Po,Pf,Pc,H,duration = Fals
     elif Uv_verbose and surcharge == 0:
         print('Calculating additional time required to reach design settlement using Po = {}kPa'.format(np.around(Po,2)))
         
-    Uv, Uv_list = Req_Surcharge_Consol_U(no_surcharge, Po, Pf, Pc, H, duration = add*duration,
-                                         e0 = e0, Cc = Cc,Cr = Cr, double_drain = double_drain, 
-                                         graph = Uv_graph, title = ' - Post-Surcharge', verbose = False)
+    No_PVD_Consol_info = Req_Surcharge_Consol_U(no_surcharge, Po, Pf, Pc, H, duration = add*duration,
+                                                e0 = e0, Cc = Cc,Cr = Cr, double_drain = double_drain, 
+                                                graph = Uv_graph, title = ' - Post-Surcharge', verbose = False)
+    Uv = No_PVD_Consol_info[0]
+    Uv_list = No_PVD_Consol_info[1]
     #Calc Uh    
     Uh_list = []
+    #Calculate equiv dimensionless time for given time range
     for time in np.arange(0,add*duration,np.around(1/(add*duration*365),6)):
         Th = ch*time/(cell_D**2)
         Uh = Uh_range[find_nearest(Th_range,Th)]
@@ -350,25 +382,35 @@ def PVD_given_duration(length,width,spacing,surcharge,Po,Pf,Pc,H,duration = Fals
 
     if graph:
         if (Uv_verbose or Uh_verbose) and surcharge > 0:
-            print('\nReferring to graph...\nBlack segment refers to main settlement path under surcharge, red segment refers to post-surcharge settlement path/rebound')
+            print('\nReferring to graph...\nSolid segment refers to main settlement path under surcharge, dotted segment refers to post-surcharge settlement path/rebound')
         elif (Uv_verbose or Uh_verbose) and surcharge == 0:
-            print('\nReferring to graph...\nBlack segment refers to main settlement path, red segment refers to residual settlement')
-        plt.figure(figsize = (10,6)) 
+            print('\nReferring to graph...\nSolid segment refers to main settlement path, dotted segment refers to residual settlement')
+            
+        if new:
+            plt.figure(figsize = (10,8)) 
         surcharge_line = plt.plot(t_list_sur*12, Svh_list_sur*1000, 
-                                  label = 'Main Settlement Path',
-                                  marker ='.', color = 'k')
+                                  label = 'Main Settlement Path, surcharge = {0}kPa\nt = {1} months'.format(surcharge,duration*12),
+                                  marker ='.', color = main_color)
         no_surcharge_line = plt.plot(t_list*12, Svh_list*1000, '--',
-                                     label = 'Residual Settlement Path',  
-                                     color = 'r', lw = 2)
+                                     label = 'Residual Settlement Path,surcharge = {0}kPa\nt = {1} months'.format(surcharge,duration*12),  
+                                     color = main_color, lw = 2) 
+
+        No_PVD_sur_t_list = np.append(np.arange(0,add*duration + duration,np.around(1/(add*duration*365),6)),duration + add*duration)
+        No_PVD_sur_Sv_list = S_design*np.asarray(No_PVD_sur_Consol_info[3][0:len(No_PVD_sur_t_list)])
+        vanilla_line = plt.plot(No_PVD_sur_t_list*12, No_PVD_sur_Sv_list*1000, ':',
+                                label = 'Original Settlement Path (no PVD & surcharge)',
+                                color = 'k', lw = 2)
+        
         plt.title('Settlement vs Time Plot')
         plt.xlabel('Time (months)')
         plt.ylabel('Settlement (mm)')
-        plt.axis([0,(duration+add*duration)*12, S_surcharge*1000*1.05,0.])
+        if axis:
+            plt.axis([0,(duration+add*duration)*12, S_surcharge*1000*1.05,0.])
 
         
         #labelling surcharge end point
         plt.hlines(S_expected*1000,0,duration*12, colors = 'green', linestyles = 'dashed', lw = 2)
-        plt.vlines(duration*12, S_expected*1000, S_surcharge*1000*1.05, colors = 'green', linestyles = 'dashed', lw = 2)
+        plt.vlines(duration*12, S_expected*1000, S_surcharge*10000, colors = 'green', linestyles = 'dashed', lw = 2) #extra long to touch x axis
         if S_residual > 0:
             plt.annotate('Expected Settlement:{0}mm\nResidual Settlement:{1}mm'.format(int(S_expected*1000),int(S_residual*1000)),
                          (duration*12, S_expected*1000),(duration*12*1.05,S_expected*1000*0.93), 
@@ -385,8 +427,11 @@ def PVD_given_duration(length,width,spacing,surcharge,Po,Pf,Pc,H,duration = Fals
                      (0, S_design*1000),(0,S_design*1000*0.98))
         
         #Display additional information
-        plt.legend(handles=[surcharge_line[0], no_surcharge_line[0], design_line], loc = 'best')
-    return S_design, S_expected, S_residual
+        if legend:
+            plt.legend(handles=[surcharge_line[0], no_surcharge_line[0], design_line], loc = 'best')
+        
+        return [(S_design, S_expected, S_residual, S_surcharge),surcharge_line[0], no_surcharge_line[0], vanilla_line[0], design_line]
+    return (S_design, S_expected, S_residual, S_surcharge)
 
 #Takes in 9 key parameters from list and unpacks into dictionary using soil name as dictionary name
 # def Stratum(Stratum_dict,Stratum_list):
