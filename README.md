@@ -1,7 +1,7 @@
 # Settlement Time Calc Module
 
 ## Purpose
- Using both Terzaghi's and Barron's analytical solutions, this script returns expected and residual settlement magnitudes given general soil properties and duration. In today's realm of computational methods which can be highly precise yet convoluted, analytical solutions offer good estimates that serves as a crosscheck. If calibrated properly, the results from this module should be comparable to more numerically intensive methods.
+ Using both Terzaghi's and Barron's analytical solutions, this script returns expected and residual settlement magnitudes given general soil properties and duration. In today's realm of computational methods which can be highly precise yet convoluted, analytical solutions offer good estimates that serves as a crosscheck. If calibrated properly, the results from this module can be comparable to numerically intensive methods (e.g. FDM, FEM)
 
 ## Input
  Inputs required from the user include strata thickness, compressibility parameters, stress states and many more. For more information, refer to the annotated Jupyter Notebook. If compressibility parameters are not available, the function is calibrated to use typical [Singapore Upper Marine Clay properties](https://www.sciencedirect.com/science/article/pii/S003808061500061X)(Myint et al,2015)
